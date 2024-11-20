@@ -18,7 +18,7 @@ Symbolic links are suitable for statically compiled programs because these progr
 
 Unlike symbolic links, the Shim mechanism is better suited for managing these dynamic dependencies and can centralize the management of executable files, helping to avoid the issues caused by path management confusion.
 
-## How to Use the Shim Mechanism
+## How to Use the Shim
 
 ### Step 1: Create a Symbolic Link in the Directory Where `shim.exe` is Located
 
@@ -55,4 +55,4 @@ Shim will:
 
 ## License
 
-This project is open-source under the BSD 3-Clause License. For more information, please refer to the [LICENSE](LICENSE) file.
+This project is open-source under the BSD 3-Clause License. For more information, please refer to the [LICENSE](LICENSE.txt) file.

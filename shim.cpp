@@ -9,25 +9,24 @@ static HANDLE h_job = nullptr;
 static HANDLE h_process = nullptr;
 static HANDLE h_thread = nullptr;
 
-static wchar_t const* os_executable() {
-	unsigned int bs = 1 << 6;
-	wchar_t* buf = nullptr;
+static fs::path os_executable() {
+	unsigned int bs = 128;
+	std::wstring link_path(bs, wchar_t(0));
 	while (true) {
-		buf = new wchar_t[bs]();
-		DWORD r = GetModuleFileNameW(
+		auto r = GetModuleFileNameW(
 			nullptr,
-			buf,
+			link_path.data(),
 			bs
 		);
 		if (r < bs) {
 			break;
 		}
-		delete[] buf;
 		bs += bs;
+		link_path.resize(bs, wchar_t(0));
 	}
-
-	return buf;
+	return link_path;
 }
+
 
 static wchar_t const* join_args(wchar_t const* const* argv) {
 	wchar_t const* first_arg = argv[0];
@@ -75,10 +74,9 @@ static bool is_gui(wchar_t const* real_path) {
 		SHGFI_EXETYPE
 	);
 	if (!hr) {
-		//std::fputs("filesystem_error", stderr);
-		exit(-1);
+		return true;
 	}
-	return (bool)(BOOL)HIWORD(hr);
+	return bool(HIWORD(hr));
 }
 
 static void set_termination_job() {
@@ -95,14 +93,13 @@ static void set_termination_job() {
 }
 
 static void run_process(wchar_t const* path, wchar_t const* args, bool gui) {
-	BOOL r = TRUE;
 	if (!gui) {
 		wchar_t* cmd = join_cmd(path, args);
 		DWORD ExitCode = 0;
 		PROCESS_INFORMATION proc_info{};
 		STARTUPINFOW start_info{};
 		GetStartupInfoW(&start_info);
-		r = CreateProcessW(
+		CreateProcessW(
 			path,
 			cmd,
 			nullptr,
@@ -133,43 +130,45 @@ static void run_process(wchar_t const* path, wchar_t const* args, bool gui) {
 		exec_info.lpFile = path;
 		exec_info.lpParameters = args;
 		exec_info.lpVerb = L"open";
-		r = ShellExecuteExW(&exec_info);
+		ShellExecuteExW(&exec_info);
 		h_process = exec_info.hProcess;
-	}
-	if (!r) {
-		//std::fputs("System_error", stderr);
-		exit_code = -1;
 	}
 }
 
-static fs::path resolve_exe_path() {
-	wchar_t const* link_path = os_executable();
-	fs::path fs_link_path(link_path);
-	delete[] link_path;
+static void exit_on_error(fs::path const& lp, std::error_code const& ec) {
+	std::fputws(lp.c_str(), stderr);
+	std::fputc(10, stderr);
+	std::fputs(ec.message().c_str(), stderr);
+	std::fputc(10, stderr);
+	exit(ec.value());
+}
 
-	if (!fs::is_symlink(fs_link_path)) {
-		//std::fputs("symlink_status", stderr);
-		exit(-1);
+
+static wchar_t const* resolve_exe_path() {
+	auto lp = os_executable();
+	std::error_code ec{};
+	auto target = fs::read_symlink(lp, ec);
+	if (ec) {
+		exit_on_error(lp, ec);
 	}
-
-	auto target = fs::read_symlink(fs_link_path);
-	target.replace_filename(fs_link_path.filename());
-	if (!fs::is_symlink(target)) {
-		//std::fputs("symlink_status", stderr);
-		exit(-1);
+	target.replace_filename(lp.filename());
+	lp = fs::read_symlink(target, ec);
+	if (ec) {
+		exit_on_error(target, ec);
 	}
-
-	return fs::read_symlink(target);
+	if (!fs::is_regular_file(lp, ec)) {
+		exit_on_error(lp, ec);
+	}
+	return lp.c_str();
 }
 
 
 int wmain(int argc, wchar_t** argv) {
 	wchar_t const* args = join_args(argv);
 	auto path = resolve_exe_path();
-	auto cpath = path.c_str();
 
 	set_termination_job();
-	run_process(cpath, args, is_gui(cpath));
+	run_process(path, args, is_gui(path));
 
 	h_process ? CloseHandle(h_process) : 0;
 	h_job ? CloseHandle(h_job) : 0;
